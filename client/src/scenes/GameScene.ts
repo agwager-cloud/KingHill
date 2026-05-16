@@ -28,6 +28,8 @@ export default class GameScene extends Phaser.Scene {
   private isMuted = false;
   private victorySoundPlayed = false;
 
+  private resizeTimer?: Phaser.Time.TimerEvent;
+
   private roomCode = "";
 
   private heldDirection: "up" | "down" | "left" | "right" | null = null;
@@ -158,59 +160,36 @@ export default class GameScene extends Phaser.Scene {
       socket.emit("requestRoomState");
     });
 
-    let resizeTimer: Phaser.Time.TimerEvent | undefined;
-
-    const scheduleRelayout = () => {
-      resizeTimer?.remove(false);
-
-      this.heldDirection = null;
-
-      resizeTimer = this.time.delayedCall(350, () => {
-        this.relayoutScene();
-
-        this.time.delayedCall(900, () => {
-          this.relayoutScene();
-        });
-      });
-    };
-
-    this.scale.on("resize", scheduleRelayout);
-
-    window.addEventListener("orientationchange", scheduleRelayout);
+    this.scale.off("resize", this.scheduleRelayout, this);
+    this.scale.on("resize", this.scheduleRelayout, this);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.scale.off("resize", scheduleRelayout);
-      window.removeEventListener("orientationchange", scheduleRelayout);
+      this.scale.off("resize", this.scheduleRelayout, this);
+      this.resizeTimer?.remove(false);
+      this.resizeTimer = undefined;
       this.stopBattleCountdown();
       this.battleResultTimer?.remove(false);
       this.battleResultTimer = undefined;
     });
   }
 
+  private scheduleRelayout() {
+    this.resizeTimer?.remove(false);
+
+    this.heldDirection = null;
+
+    this.resizeTimer = this.time.delayedCall(250, () => {
+      this.relayoutScene();
+    });
+  }
+
   private relayoutScene() {
     this.heldDirection = null;
 
-    const canvasParent = this.game.canvas.parentElement;
+    const newWidth = this.scale.width;
+    const newHeight = this.scale.height;
 
-    const width =
-      canvasParent?.clientWidth ||
-      document.documentElement.clientWidth ||
-      window.innerWidth;
-
-    const height =
-      canvasParent?.clientHeight ||
-      document.documentElement.clientHeight ||
-      window.innerHeight;
-
-    const newWidth = Math.round(width);
-    const newHeight = Math.round(height);
-
-    if (
-      this.scale.gameSize.width !== newWidth ||
-      this.scale.gameSize.height !== newHeight
-    ) {
-      this.scale.resize(newWidth, newHeight);
-    }
+    this.cameras.main.setSize(newWidth, newHeight);
 
     const wasInBattle = this.inBattle;
     const hadChosenRps = this.hasChosenRps;
@@ -316,7 +295,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.heldDirection && time >= this.nextTouchMoveAt) {
       socket.emit("moveRequest", this.heldDirection);
 
-      this.nextTouchMoveAt = time + 170;
+      this.nextTouchMoveAt = time + 90;
     }
   }
 
@@ -882,7 +861,8 @@ export default class GameScene extends Phaser.Scene {
         if (this.inBattle) return;
 
         this.heldDirection = direction;
-        this.nextTouchMoveAt = this.time.now;
+        socket.emit("moveRequest", direction);
+        this.nextTouchMoveAt = this.time.now + 90;
         button.setFillStyle(0xffffff, 0.28);
       };
 

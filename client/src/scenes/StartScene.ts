@@ -23,20 +23,17 @@ export default class StartScene extends Phaser.Scene {
   create() {
     this.buildStartScreen();
 
-    this.scale.off("resize");
+    this.scale.off("resize", this.handleResize, this);
     this.scale.on("resize", this.handleResize, this);
 
     socket.off("roomCreated");
     socket.off("joinSuccess");
     socket.off("joinError");
     socket.off("gameState");
-
     socket.off("powerupCollected");
 
     socket.on("powerupCollected", () => {
-      this.sound.play("powerup", {
-        volume: 0.65,
-      });
+      this.sound.play("powerup", { volume: 0.65 });
     });
 
     socket.on("roomCreated", ({ roomCode }: { roomCode: string }) => {
@@ -44,15 +41,14 @@ export default class StartScene extends Phaser.Scene {
       this.lobbyRoomCode = roomCode;
       this.removeInputs();
 
-      this.scene.start("HostLobbyScene", {
-        roomCode,
-      });
+      this.scene.start("HostLobbyScene", { roomCode });
     });
 
     socket.on("joinSuccess", ({ roomCode }: { roomCode: string }) => {
       this.isHost = false;
       this.lobbyRoomCode = roomCode;
       socket.emit("requestRoomState");
+
       this.removeInputs();
       this.children.removeAll();
       this.buildLobbyScreen(roomCode);
@@ -70,6 +66,7 @@ export default class StartScene extends Phaser.Scene {
 
       if (state.gameStatus === "playing") {
         this.removeInputs();
+
         this.scene.start("GameScene", {
           initialState: state,
           roomCode: this.lobbyRoomCode,
@@ -79,11 +76,12 @@ export default class StartScene extends Phaser.Scene {
 
     this.events.once("shutdown", () => {
       this.scale.off("resize", this.handleResize, this);
+      this.resizeTimer?.remove(false);
       this.removeInputs();
     });
   }
 
-  private handleResize() {
+  private handleResize(gameSize: Phaser.Structs.Size) {
     this.resizeTimer?.remove(false);
 
     const isTyping =
@@ -91,41 +89,50 @@ export default class StartScene extends Phaser.Scene {
       document.activeElement === this.codeInput ||
       this.inputLayoutFrozen;
 
-    if (isTyping) return;
+    this.cameras.main.setSize(gameSize.width, gameSize.height);
+
+    if (isTyping) {
+      this.repositionInputs();
+      return;
+    }
 
     this.resizeTimer = this.time.delayedCall(120, () => {
+      this.children.removeAll();
+
       if (this.lobbyRoomCode) {
-        this.children.removeAll();
         this.buildLobbyScreen(this.lobbyRoomCode);
-        if (this.latestLobbyState) this.updatePlayerList(this.latestLobbyState);
-        return;
+        if (this.latestLobbyState) {
+          this.updatePlayerList(this.latestLobbyState);
+        }
+      } else {
+        this.buildStartScreen(false);
       }
 
-      this.children.removeAll();
-      this.buildStartScreen(false);
+      this.repositionInputs();
     });
   }
 
   private addBackground() {
-    const w = this.scale.gameSize.width;
-    const h = this.scale.gameSize.height;
+    const w = this.scale.width;
+    const h = this.scale.height;
 
     this.add.rectangle(0, 0, w, h, 0x111111).setOrigin(0).setDepth(-20);
 
     const bg = this.add.image(w / 2, h / 2, "bg");
-    const scale = Math.min(w / bg.width, h / bg.height);
+    const scale = Math.max(w / bg.width, h / bg.height);
     bg.setScale(scale).setDepth(-10);
 
     this.add.rectangle(0, 0, w, h, 0x000000, 0.45).setOrigin(0).setDepth(-5);
   }
 
   private getInputMetrics() {
-    const w = this.scale.gameSize.width;
-    const h = this.scale.gameSize.height;
+    const w = this.scale.width;
+    const h = this.scale.height;
     const isLandscape = w > h;
 
     return {
-      inputWidth: Math.max(110, Math.min(isLandscape ? 170 : 150, w * 0.28)),
+      inputWidth: Math.max(140, Math.min(isLandscape ? 260 : 220, w * 0.28)),
+      inputHeight: Math.max(42, Math.min(62, h * 0.07)),
       inputFontSize: Math.max(20, Math.min(34, w * 0.045)),
       nameY: isLandscape ? 0.43 : 0.41,
       codeY: isLandscape ? 0.61 : 0.58,
@@ -136,19 +143,25 @@ export default class StartScene extends Phaser.Scene {
     input: HTMLInputElement,
     yRatio: number,
     width: number,
+    height: number,
     fontSize: number,
   ) {
     const rect = this.game.canvas.getBoundingClientRect();
 
+    const scaleX = rect.width / this.scale.width;
+    const scaleY = rect.height / this.scale.height;
+
+    const x = this.scale.width / 2;
+    const y = this.scale.height * yRatio;
+
     input.style.position = "fixed";
-    input.style.left = `${rect.left + rect.width / 2}px`;
-    input.style.top = `${rect.top + rect.height * yRatio}px`;
-    input.style.transform = "translate(-50%, -50%)";
+    input.style.left = `${rect.left + x * scaleX - (width * scaleX) / 2}px`;
+    input.style.top = `${rect.top + y * scaleY - (height * scaleY) / 2}px`;
+    input.style.width = `${width * scaleX}px`;
+    input.style.height = `${height * scaleY}px`;
+    input.style.fontSize = `${fontSize * scaleY}px`;
 
-    input.style.width = `${width}px`;
-    input.style.height = `${fontSize * 1.7}px`;
-    input.style.fontSize = `${fontSize}px`;
-
+    input.style.transform = "none";
     input.style.textAlign = "center";
     input.style.borderRadius = "14px";
     input.style.border = "4px solid white";
@@ -168,6 +181,7 @@ export default class StartScene extends Phaser.Scene {
         this.nameInput,
         metrics.nameY,
         metrics.inputWidth,
+        metrics.inputHeight,
         metrics.inputFontSize,
       );
     }
@@ -177,6 +191,7 @@ export default class StartScene extends Phaser.Scene {
         this.codeInput,
         metrics.codeY,
         metrics.inputWidth,
+        metrics.inputHeight,
         metrics.inputFontSize,
       );
     }
@@ -200,8 +215,8 @@ export default class StartScene extends Phaser.Scene {
 
     this.addBackground();
 
-    const w = this.scale.gameSize.width;
-    const h = this.scale.gameSize.height;
+    const w = this.scale.width;
+    const h = this.scale.height;
     const isLandscape = w > h;
 
     const labelSize = Math.max(16, Math.min(26, w * 0.032));
@@ -237,7 +252,6 @@ export default class StartScene extends Phaser.Scene {
       });
 
       this.attachInputFocusGuards(nameInput);
-
       document.body.appendChild(nameInput);
     }
 
@@ -245,6 +259,7 @@ export default class StartScene extends Phaser.Scene {
       this.nameInput,
       metrics.nameY,
       metrics.inputWidth,
+      metrics.inputHeight,
       metrics.inputFontSize,
     );
 
@@ -277,7 +292,6 @@ export default class StartScene extends Phaser.Scene {
       });
 
       this.attachInputFocusGuards(codeInput);
-
       document.body.appendChild(codeInput);
     }
 
@@ -285,6 +299,7 @@ export default class StartScene extends Phaser.Scene {
       this.codeInput,
       metrics.codeY,
       metrics.inputWidth,
+      metrics.inputHeight,
       metrics.inputFontSize,
     );
 
@@ -333,8 +348,8 @@ export default class StartScene extends Phaser.Scene {
   private buildLobbyScreen(roomCode: string) {
     this.addBackground();
 
-    const w = this.scale.gameSize.width;
-    const h = this.scale.gameSize.height;
+    const w = this.scale.width;
+    const h = this.scale.height;
 
     const titleSize = Math.max(24, Math.min(42, w * 0.045));
     const textSize = Math.max(16, Math.min(26, w * 0.03));

@@ -8,14 +8,14 @@ import "./style.css";
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: "app",
-  width: window.innerWidth,
-  height: window.innerHeight,
   backgroundColor: "#1a1a1a",
-  scene: [StartScene, HostLobbyScene, GameScene],
   scale: {
     mode: Phaser.Scale.RESIZE,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
+    parent: "app",
+    width: "100%",
+    height: "100%",
   },
+  scene: [StartScene, HostLobbyScene, GameScene],
 };
 
 new Phaser.Game(config);
