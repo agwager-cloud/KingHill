@@ -48,7 +48,6 @@ export default class HostLobbyScene extends Phaser.Scene {
         this.scene.start("GameScene", {
           initialState: state,
           roomCode: this.roomCode,
-          isHost: true,
         });
         return;
       }

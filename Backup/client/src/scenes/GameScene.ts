@@ -31,7 +31,6 @@ export default class GameScene extends Phaser.Scene {
   private resizeTimer?: Phaser.Time.TimerEvent;
 
   private roomCode = "";
-  private isHost = false;
 
   private heldDirection: "up" | "down" | "left" | "right" | null = null;
   private nextTouchMoveAt = 0;
@@ -55,14 +54,9 @@ export default class GameScene extends Phaser.Scene {
     this.load.audio("victory", "assets/sounds/victory.mp3");
   }
 
-  init(data: {
-    initialState?: GameState;
-    roomCode?: string;
-    isHost?: boolean;
-  }) {
+  init(data: { initialState?: GameState; roomCode?: string }) {
     this.initialStateFromStart = data.initialState;
     this.roomCode = data.roomCode ?? "";
-    this.isHost = data.isHost ?? false;
   }
 
   create() {
@@ -345,8 +339,8 @@ export default class GameScene extends Phaser.Scene {
     this.tiles = [];
 
     const size = 9;
-    const screenWidth = this.scale.width;
-    const screenHeight = this.scale.height;
+    const screenWidth = this.scale.gameSize.width;
+    const screenHeight = this.scale.gameSize.height;
 
     const isTouch = this.sys.game.device.input.touch;
     const isLandscape = screenWidth > screenHeight;
@@ -364,197 +358,50 @@ export default class GameScene extends Phaser.Scene {
       : screenHeight * 0.8;
 
     const tileSize = Math.floor(Math.min(maxGridWidth, maxGridHeight) / size);
+
     const gridWidth = tileSize * size;
     const gridHeight = tileSize * size;
 
     const startX = (screenWidth - gridWidth) / 2;
     const startY = (screenHeight - gridHeight) / 2;
 
-    const gap = Math.max(2, Math.floor(tileSize * 0.035));
-    const liftPerLevel = Math.max(5, Math.floor(tileSize * 0.075));
-    const cliffDepth = Math.max(7, Math.floor(tileSize * 0.13));
-    const strokeWidth = Math.max(2, Math.floor(tileSize * 0.025));
-
-    const levelAt = (row: number, col: number) => {
-      if (row < 0 || row >= size || col < 0 || col >= size) return 0;
-      return this.getRingLevel(row, col);
-    };
-
-    const getTileTop = (row: number, col: number, level: number) => {
-      const x = startX + col * tileSize;
-      const y = startY + row * tileSize;
-      const lift = (level - 1) * liftPerLevel;
-
-      return {
-        x,
-        y,
-        topY: y - lift,
-      };
-    };
-
-    // Whole-board soft floor shadow
-    this.add
-      .rectangle(
-        startX + gridWidth / 2 + cliffDepth,
-        startY + gridHeight / 2 + cliffDepth,
-        gridWidth,
-        gridHeight,
-        0x000000,
-        0.24,
-      )
-      .setDepth(-20);
-
-    // Platform shadows: one shadow per raised level, not one shadow per tile
-    for (let level = 2; level <= 5; level++) {
-      const min = level - 1;
-      const layerSize = size - min * 2;
-      const layerX = startX + min * tileSize;
-      const layerY = startY + min * tileSize - (level - 1) * liftPerLevel;
-
-      this.add
-        .rectangle(
-          layerX + (layerSize * tileSize) / 2 + cliffDepth,
-          layerY + (layerSize * tileSize) / 2 + cliffDepth,
-          layerSize * tileSize,
-          layerSize * tileSize,
-          0x000000,
-          0.18,
-        )
-        .setDepth(level * 10 - 4);
-    }
-
-    // Draw cliff faces only where a level drops to a lower level
     for (let row = 0; row < size; row++) {
       for (let col = 0; col < size; col++) {
+        const x = startX + col * tileSize;
+        const y = startY + row * tileSize;
+
         const level = this.getRingLevel(row, col);
-        if (level === -1) continue;
 
-        const { x, topY } = getTileTop(row, col, level);
-
-        const lowerSouth = levelAt(row + 1, col) < level;
-        const lowerEast = levelAt(row, col + 1) < level;
-
-        if (lowerSouth) {
+        if (level !== -1) {
           this.add
-            .rectangle(
-              x + gap / 2,
-              topY + tileSize - gap,
-              tileSize - gap + cliffDepth,
-              cliffDepth,
-              0x111111,
-              1,
-            )
-            .setOrigin(0)
-            .setDepth(level * 10);
-        }
-
-        if (lowerEast) {
-          this.add
-            .rectangle(
-              x + tileSize - gap,
-              topY,
-              cliffDepth,
-              tileSize + cliffDepth,
-              0x1a1a1a,
-              1,
-            )
-            .setOrigin(0)
-            .setDepth(level * 10 + 1);
-        }
-      }
-    }
-
-    // Draw tile tops level-by-level so higher platforms sit visually above lower ones
-    for (let level = 1; level <= 5; level++) {
-      for (let row = 0; row < size; row++) {
-        for (let col = 0; col < size; col++) {
-          const tileLevel = this.getRingLevel(row, col);
-          if (tileLevel !== level) continue;
-
-          const color = this.getColor(level);
-          const { x, topY } = getTileTop(row, col, level);
-
-          this.add
-            .rectangle(
-              x + gap / 2,
-              topY + gap / 2,
-              tileSize - gap,
-              tileSize - gap,
-              color,
-              1,
-            )
-            .setOrigin(0)
-            .setStrokeStyle(strokeWidth, 0x111111, 0.95)
-            .setDepth(level * 10 + 5);
-
-          // Top-left highlight
-          this.add
-            .rectangle(
-              x + gap,
-              topY + gap,
-              tileSize - gap * 2,
-              strokeWidth,
-              this.adjustColor(color, 35),
-              0.45,
-            )
-            .setOrigin(0)
-            .setDepth(level * 10 + 6);
-
-          this.add
-            .rectangle(
-              x + gap,
-              topY + gap,
-              strokeWidth,
-              tileSize - gap * 2,
-              this.adjustColor(color, 28),
-              0.35,
-            )
-            .setOrigin(0)
-            .setDepth(level * 10 + 6);
-
-          // Bottom-right darker edge
-          this.add
-            .rectangle(
-              x + gap,
-              topY + tileSize - gap - strokeWidth,
-              tileSize - gap * 2,
-              strokeWidth,
-              this.adjustColor(color, -45),
-              0.55,
-            )
-            .setOrigin(0)
-            .setDepth(level * 10 + 6);
+            .rectangle(x, y, tileSize - 2, tileSize - 2, this.getColor(level))
+            .setOrigin(0);
 
           if (level === 5) {
             const graphics = this.add.graphics();
-            graphics.setDepth(level * 10 + 8);
-            graphics.lineStyle(strokeWidth, 0x111111, 1);
 
-            const left = x + gap / 2;
-            const right = x + tileSize - gap / 2;
-            const top = topY + gap / 2;
-            const bottom = topY + tileSize - gap / 2;
-            const midX = x + tileSize / 2;
-            const midY = topY + tileSize / 2;
+            // Match grid line style
+            graphics.lineStyle(2, 0x000000, 1);
 
+            // Vertical line
             graphics.beginPath();
-            graphics.moveTo(midX, top);
-            graphics.lineTo(midX, bottom);
+            graphics.moveTo(x + tileSize / 2, y);
+            graphics.lineTo(x + tileSize / 2, y + tileSize);
             graphics.strokePath();
 
+            // Horizontal line
             graphics.beginPath();
-            graphics.moveTo(left, midY);
-            graphics.lineTo(right, midY);
+            graphics.moveTo(x, y + tileSize / 2);
+            graphics.lineTo(x + tileSize, y + tileSize / 2);
             graphics.strokePath();
           }
 
-          // IMPORTANT: player/powerup centre stays on the top face of the visual tile
           this.tiles.push({
             row,
             col,
             level,
             x: x + tileSize / 2,
-            y: topY + tileSize / 2,
+            y: y + tileSize / 2,
           });
         }
       }
@@ -588,21 +435,6 @@ export default class GameScene extends Phaser.Scene {
       default:
         return 0xffffff;
     }
-  }
-
-  private adjustColor(color: number, amount: number): number {
-    const r = Phaser.Display.Color.GetColor32(
-      (color >> 16) & 255,
-      (color >> 8) & 255,
-      color & 255,
-      255,
-    );
-
-    const red = Math.max(0, Math.min(255, ((r >> 16) & 255) + amount));
-    const green = Math.max(0, Math.min(255, ((r >> 8) & 255) + amount));
-    const blue = Math.max(0, Math.min(255, (r & 255) + amount));
-
-    return Phaser.Display.Color.GetColor(red, green, blue);
   }
 
   getDisplayPosition(tile: TileData) {
@@ -1234,7 +1066,11 @@ export default class GameScene extends Phaser.Scene {
 
     if (!this.victorySoundPlayed) {
       this.sound.stopByKey("victory");
-      this.sound.play("victory", { volume: 0.7 });
+
+      this.sound.play("victory", {
+        volume: 0.7,
+      });
+
       this.victorySoundPlayed = true;
     }
 
@@ -1247,44 +1083,33 @@ export default class GameScene extends Phaser.Scene {
     this.battleOverlay?.destroy();
     this.battleOverlay = undefined;
 
-    const screenWidth = this.scale.width;
-    const screenHeight = this.scale.height;
+    const screenWidth = this.scale.gameSize.width;
+    const screenHeight = this.scale.gameSize.height;
 
     const centerX = screenWidth / 2;
     const centerY = screenHeight / 2;
 
-    const panelWidth = Math.min(screenWidth * 0.82, 620);
-    const panelHeight = Math.min(screenHeight * 0.76, this.isHost ? 470 : 410);
+    const panelWidth = Math.min(screenWidth * 0.9, 560);
+    const panelHeight = Math.min(screenHeight * 0.75, 460);
 
     this.endGameOverlay = this.add.container(0, 0).setDepth(1500);
 
     const dim = this.add
-      .rectangle(0, 0, screenWidth, screenHeight, 0x000000, 0.76)
+      .rectangle(0, 0, screenWidth, screenHeight, 0x000000, 0.72)
       .setOrigin(0);
 
-    const shadow = this.add.rectangle(
-      centerX + 8,
-      centerY + 8,
-      panelWidth,
-      panelHeight,
-      0x000000,
-      0.45,
-    );
-
     const panel = this.add
-      .rectangle(centerX, centerY, panelWidth, panelHeight, 0x222222, 0.96)
+      .rectangle(centerX, centerY, panelWidth, panelHeight, 0x222222, 0.97)
       .setStrokeStyle(5, 0xffff00);
 
-    const titleSize = Math.max(34, Math.min(56, screenWidth * 0.055));
-
     const title = this.add
-      .text(centerX, centerY - panelHeight * 0.36, "GAME OVER", {
-        fontSize: `${titleSize}px`,
+      .text(centerX, centerY - panelHeight * 0.39, "GAME OVER", {
+        fontSize: "38px",
         color: "#ffff00",
         fontFamily: "Arial",
         fontStyle: "bold",
         stroke: "#000000",
-        strokeThickness: 8,
+        strokeThickness: 6,
       })
       .setOrigin(0.5);
 
@@ -1309,48 +1134,49 @@ export default class GameScene extends Phaser.Scene {
             .join("\n")
         : "Nobody reached the summit!";
 
-    const leaderboardSize = Math.max(22, Math.min(30, screenWidth * 0.032));
-
     const leaderboard = this.add
-      .text(centerX, centerY - panelHeight * 0.04, leaderboardLines, {
-        fontSize: `${leaderboardSize}px`,
+      .text(centerX, centerY - panelHeight * 0.12, leaderboardLines, {
+        fontSize: "24px",
         color: "#ffffff",
         fontFamily: "Arial",
         fontStyle: "bold",
         align: "center",
         stroke: "#000000",
-        strokeThickness: 5,
-        lineSpacing: 14,
+        strokeThickness: 4,
+        lineSpacing: 10,
       })
       .setOrigin(0.5);
 
-    this.endGameOverlay.add([dim, shadow, panel, title, leaderboard]);
+    const buttonY = centerY + panelHeight * 0.32;
 
-    if (this.isHost) {
-      const buttonY = centerY + panelHeight * 0.36;
+    const playAgainButton = this.add
+      .rectangle(centerX, buttonY, 220, 64, 0x27ae60, 1)
+      .setStrokeStyle(4, 0xffffff)
+      .setInteractive({ useHandCursor: true });
 
-      const playAgainButton = this.add
-        .rectangle(centerX, buttonY, 250, 68, 0x27ae60, 1)
-        .setStrokeStyle(5, 0xffffff)
-        .setInteractive({ useHandCursor: true });
+    const playAgainText = this.add
+      .text(centerX, buttonY, "PLAY AGAIN", {
+        fontSize: "24px",
+        color: "#ffffff",
+        fontFamily: "Arial",
+        fontStyle: "bold",
+        stroke: "#000000",
+        strokeThickness: 4,
+      })
+      .setOrigin(0.5);
 
-      const playAgainText = this.add
-        .text(centerX, buttonY, "PLAY AGAIN", {
-          fontSize: "28px",
-          color: "#ffffff",
-          fontFamily: "Arial",
-          fontStyle: "bold",
-          stroke: "#000000",
-          strokeThickness: 5,
-        })
-        .setOrigin(0.5);
+    playAgainButton.on("pointerdown", () => {
+      socket.emit("playAgain");
+    });
 
-      playAgainButton.on("pointerdown", () => {
-        socket.emit("playAgain");
-      });
-
-      this.endGameOverlay.add([playAgainButton, playAgainText]);
-    }
+    this.endGameOverlay.add([
+      dim,
+      panel,
+      title,
+      leaderboard,
+      playAgainButton,
+      playAgainText,
+    ]);
   }
 
   showRpsResult(data: {

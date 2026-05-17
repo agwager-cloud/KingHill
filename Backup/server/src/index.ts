@@ -823,8 +823,6 @@ const BLOCKED_INITIALS = new Set([
   "TIT",
   "BJS",
   "BJ",
-  "YOU",
-  "BOT",
 ]);
 
 function cleanName(name: string): string {
